@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -19,6 +21,32 @@ namespace BurgerMonster.ClaudeAgent
         {
             get => EditorPrefs.GetInt(PortKey, DefaultPort);
             set => EditorPrefs.SetInt(PortKey, value);
+        }
+
+        // Tries to read the OAuth token Claude CLI stored after `claude setup-token`.
+        // Returns null if not found.
+        public static string TryReadClaudeConfigToken()
+        {
+            var home = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+            var candidates = new[]
+            {
+                Path.Combine(home, ".claude", ".credentials.json"),
+                Path.Combine(home, ".claude", "auth.json"),
+                Path.Combine(home, ".claude", "settings.json"),
+            };
+            foreach (var path in candidates)
+            {
+                if (!File.Exists(path)) continue;
+                try
+                {
+                    var text = File.ReadAllText(path);
+                    var m = Regex.Match(text,
+                        @"""(?:oauthToken|claudeAiOauthToken|accessToken|token)""\s*:\s*""([^""]+)""");
+                    if (m.Success) return m.Groups[1].Value;
+                }
+                catch { /* ignore */ }
+            }
+            return null;
         }
     }
 

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using BurgerMonster.ClaudeAgent.Samples;
 using UnityEditor;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace BurgerMonster.ClaudeAgent
 {
@@ -20,6 +22,11 @@ namespace BurgerMonster.ClaudeAgent
         bool _connecting;
         string _partialAssistant; // accumulated text_delta for current response
         string _pendingApprovalRequestId;
+
+        // Auth flow
+        bool _authRunning;
+        string _tokenPaste = "";
+        Process _authProcess;
 
         // ── Styles (lazy) ────────────────────────────────────────────────────
         GUIStyle _userStyle, _assistStyle, _sysStyle;
@@ -62,17 +69,7 @@ namespace BurgerMonster.ClaudeAgent
 
             // Connect prompt if not connected
             if (_bridge?.IsConnected != true)
-            {
-                EditorGUILayout.HelpBox(
-                    "사이드카에 연결되지 않았습니다.\n" +
-                    "Edit > Project Settings > Claude Agent 에서 OAuth 토큰을 설정하고 연결하세요.",
-                    MessageType.Info);
-
-                GUI.enabled = !_connecting;
-                if (GUILayout.Button(_connecting ? "연결 중…" : "연결"))
-                    _ = ConnectAsync();
-                GUI.enabled = true;
-            }
+                DrawConnectPrompt();
 
             // Chat log
             _scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.ExpandHeight(true));
@@ -113,6 +110,118 @@ namespace BurgerMonster.ClaudeAgent
             }
             GUI.enabled = true;
             EditorGUILayout.EndHorizontal();
+        }
+
+        // ── Connect prompt ───────────────────────────────────────────────────
+        void DrawConnectPrompt()
+        {
+            bool hasToken = !string.IsNullOrEmpty(ClaudeAgentSettings.OAuthToken);
+
+            if (!hasToken)
+            {
+                DrawAuthSection();
+                return;
+            }
+
+            EditorGUILayout.HelpBox("사이드카에 연결되지 않았습니다.", MessageType.Info);
+            GUI.enabled = !_connecting;
+            if (GUILayout.Button(_connecting ? "연결 중…" : "연결"))
+                _ = ConnectAsync();
+            GUI.enabled = true;
+        }
+
+        void DrawAuthSection()
+        {
+            EditorGUILayout.Space(6);
+            EditorGUILayout.LabelField("Claude 계정 연동", EditorStyles.boldLabel);
+
+            if (_authRunning)
+            {
+                EditorGUILayout.HelpBox(
+                    "브라우저에서 로그인을 완료해 주세요.\n" +
+                    "완료 후 토큰이 자동으로 감지됩니다. 감지되지 않으면 아래에 붙여넣기 하세요.",
+                    MessageType.Info);
+
+                EditorGUILayout.BeginHorizontal();
+                _tokenPaste = EditorGUILayout.PasswordField("토큰 붙여넣기", _tokenPaste);
+                if (GUILayout.Button("저장", GUILayout.Width(48)) &&
+                    !string.IsNullOrWhiteSpace(_tokenPaste))
+                    ApplyToken(_tokenPaste.Trim());
+                EditorGUILayout.EndHorizontal();
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    "Claude Pro / Max 구독 계정으로 로그인하면 Unity Editor에서 Claude를 사용할 수 있습니다.\n\n" +
+                    "필요 사항: claude CLI 설치\n" +
+                    "npm install -g @anthropic-ai/claude-code",
+                    MessageType.Info);
+
+                if (GUILayout.Button("Claude 계정 연동", GUILayout.Height(28)))
+                    StartAuthFlow();
+
+                EditorGUILayout.Space(4);
+                EditorGUILayout.LabelField("이미 토큰이 있으신가요?", EditorStyles.miniLabel);
+                EditorGUILayout.BeginHorizontal();
+                _tokenPaste = EditorGUILayout.PasswordField(_tokenPaste);
+                if (GUILayout.Button("저장", GUILayout.Width(48)) &&
+                    !string.IsNullOrWhiteSpace(_tokenPaste))
+                    ApplyToken(_tokenPaste.Trim());
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        void StartAuthFlow()
+        {
+            _authRunning = true;
+            _tokenPaste  = "";
+            Repaint();
+
+            try
+            {
+                var psi = new ProcessStartInfo("claude", "setup-token")
+                {
+                    UseShellExecute = true,  // interactive; opens in its own terminal/browser
+                };
+                _authProcess = Process.Start(psi);
+                if (_authProcess != null)
+                {
+                    _authProcess.EnableRaisingEvents = true;
+                    _authProcess.Exited += (_, _) =>
+                        MainThreadDispatcher.Enqueue(OnAuthProcessExited);
+                }
+            }
+            catch (Exception ex)
+            {
+                _authRunning = false;
+                AddSystem($"오류: claude CLI를 실행할 수 없습니다 — {ex.Message}");
+                AddSystem("npm install -g @anthropic-ai/claude-code 를 먼저 실행해 주세요.");
+                Repaint();
+            }
+        }
+
+        void OnAuthProcessExited()
+        {
+            var token = ClaudeAgentSettings.TryReadClaudeConfigToken();
+            if (!string.IsNullOrEmpty(token))
+            {
+                ApplyToken(token);
+            }
+            else
+            {
+                // Keep _authRunning=true so the paste field stays visible
+                AddSystem("토큰을 자동으로 읽지 못했습니다. 아래 필드에 직접 붙여넣기 해주세요.");
+                Repaint();
+            }
+        }
+
+        void ApplyToken(string token)
+        {
+            ClaudeAgentSettings.OAuthToken = token;
+            _tokenPaste  = "";
+            _authRunning = false;
+            AddSystem("✅ 토큰이 저장되었습니다. 연결 버튼을 눌러 시작하세요.");
+            Repaint();
         }
 
         // ── Connect ──────────────────────────────────────────────────────────
