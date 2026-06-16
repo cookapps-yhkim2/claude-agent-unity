@@ -1,0 +1,17 @@
+{
+  "name": "com.burgermonster.claude-agent",
+  "version": "0.1.0",
+  "displayName": "Claude Agent",
+  "description": "Unity Editor AI host powered by Claude Agent SDK. Chat with Claude inside the Unity Editor to manipulate scenes, read logs, and run custom tools.",
+  "unity": "6000.0",
+  "documentationUrl": "",
+  "changelogUrl": "",
+  "licensesUrl": "",
+  "author": {
+    "name": "BurgerMonster",
+    "email": "dev@burgermonster.com",
+    "url": "https://burgermonster.com"
+  },
+  "keywords": ["claude", "ai", "agent", "editor"],
+  "dependencies": {}
+}
