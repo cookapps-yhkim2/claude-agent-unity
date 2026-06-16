@@ -231,10 +231,20 @@ namespace BurgerMonster.ClaudeAgent
             var port = ClaudeAgentSettings.SidecarPort;
 
             if (!SidecarManager.IsRunning)
-                SidecarManager.Start(port);
+            {
+                // Run on background thread — EnsureNpmInstalled() is blocking
+                var started = await Task.Run(() => SidecarManager.Start(port));
+                if (!started)
+                {
+                    AddSystem("⚠️ 사이드카를 시작할 수 없습니다. Unity Console 로그를 확인해 주세요.");
+                    _connecting = false;
+                    Repaint();
+                    return;
+                }
+            }
 
-            // Give the sidecar a moment to start its WS server
-            await Task.Delay(1500);
+            // Give node process time to bind the WS port
+            await Task.Delay(2500);
 
             _bridge = new WebSocketBridge(port);
             _bridge.OnMessage     += HandleMessage;

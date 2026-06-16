@@ -23,11 +23,13 @@ namespace BurgerMonster.ClaudeAgent
 
         public WebSocketBridge(int port) => _port = port;
 
-        public async Task ConnectAsync()
+        public async Task ConnectAsync(int timeoutMs = 10_000)
         {
             _cts = new CancellationTokenSource();
             _ws  = new ClientWebSocket();
-            await _ws.ConnectAsync(new Uri($"ws://localhost:{_port}"), _cts.Token);
+            using var timeout = new CancellationTokenSource(timeoutMs);
+            using var linked  = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, timeout.Token);
+            await _ws.ConnectAsync(new Uri($"ws://localhost:{_port}"), linked.Token);
             _ = ReceiveLoopAsync();
         }
 
